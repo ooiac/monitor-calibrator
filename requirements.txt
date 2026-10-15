@@ -1,0 +1,3 @@
+# Only needed for the phone camera part. Everything else runs on plain Python.
+pillow>=11.0
+qrcode>=7.4

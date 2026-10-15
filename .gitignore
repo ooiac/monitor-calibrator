@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.idea/
+.vscode/
+*.log
+
+# Your own calibrations stay on your PC.
+profiles/*
+!profiles/README.md
+!profiles/_example.json

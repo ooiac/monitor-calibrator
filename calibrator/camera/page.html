@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor Calibrator</title>
+<style>
+  /* Neutral grays only, so the page itself doesn't bias how you see color. Accents are the 75% color bars. */
+  :root {
+    --bg: #ececec; --panel: #f6f6f6; --line: #cfcfcf; --strong: #a8a8a8; --text: #171717; --dim: #575757;
+    --action: #171717; --action-text: #f4f4f4;
+    --ok: #2e8a38; --warn: #866f00; --error: #b13a2f; --info: #1d7c86;
+    --din: Bahnschrift, "DIN Alternate", "DIN Condensed", "Roboto Condensed", "Arial Narrow", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1d1d1d; --panel: #262626; --line: #393939; --strong: #555; --text: #e6e6e6; --dim: #a0a0a0;
+      --action: #e6e6e6; --action-text: #161616;
+      --ok: #5fb865; --warn: #d4bf3a; --error: #dc5e52; --info: #43b9c3;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 0 18px 48px; }
+  .bars { display: flex; height: 6px; }
+  .bars i { flex: 1; }
+  header { padding: 18px 0 6px; }
+  .brand { font: 600 13px/1 var(--din); letter-spacing: .06em; text-transform: uppercase; }
+  .screen { color: var(--dim); margin: 6px 0 0; }
+  .screen b { color: var(--text); font-weight: 600; }
+  section { padding-top: 26px; }
+  .label { font: 600 12px/1 var(--din); letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+           border-bottom: 1px solid var(--line); padding-bottom: 7px; margin-bottom: 14px;
+           display: flex; justify-content: space-between; }
+  h2 { font: 600 24px/1.15 var(--din); margin: 0 0 6px; }
+  p { margin: 8px 0; }
+  .dim { color: var(--dim); } .small { font-size: 14px; }
+  .ok { color: var(--ok); } .error { color: var(--error); } .warn { color: var(--warn); }
+  .hidden { display: none !important; }
+  button, .button { display: inline-flex; align-items: center; justify-content: center; min-height: 46px;
+         padding: 0 18px; border: 1px solid var(--strong); border-radius: 3px; background: transparent;
+         color: var(--text); font: 600 15px/1 system-ui, sans-serif; cursor: pointer; margin: 6px 8px 0 0; }
+  button.primary, .button.primary { background: var(--action); color: var(--action-text); border-color: var(--action); }
+  button.small { min-height: 34px; padding: 0 12px; font-size: 14px; }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; }
+  .note { border-left: 2px solid var(--warn); padding: 2px 0 2px 12px; margin: 10px 0; }
+  .note.error { border-color: var(--error); color: var(--text); }
+  .note.info { border-color: var(--info); }
+  .checks p { margin: 6px 0; display: flex; gap: 9px; font-size: 15px; }
+  .checks i { font-style: normal; flex: none; width: 9px; height: 9px; margin-top: 7px; }
+  .tips { padding-left: 18px; margin: 10px 0 0; } .tips li { margin: 5px 0; }
+  figure { margin: 4px 0 0; display: flex; gap: 14px; align-items: center; }
+  figure svg { flex: none; }
+  canvas { width: 100%; display: block; touch-action: none; background: #000; margin-top: 12px; }
+  fieldset { border: 0; border-top: 1px solid var(--line); margin: 18px 0 0; padding: 12px 0 0; }
+  legend { font: 600 12px/1 var(--din); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding-right: 8px; }
+  fieldset label, .stack label { display: block; margin: 10px 0; }
+  input[type=number], select { font: inherit; padding: 5px 7px; border: 1px solid var(--strong); border-radius: 3px;
+         background: var(--panel); color: var(--text); }
+  input[type=number] { width: 6em; }
+  .readouts { display: flex; gap: 22px; flex-wrap: wrap; margin: 4px 0 2px; }
+  .readouts div span { display: block; font: 600 11px/1 var(--din); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .readouts div b { font: 300 30px/1.2 var(--din); font-variant-numeric: tabular-nums; }
+  #plot { width: 100%; max-width: 300px; height: auto; margin-top: 10px; }
+  #overlay { width: 100%; margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--dim); margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="bars"><i style="background:#bfbfbf"></i><i style="background:#bfbf00"></i><i style="background:#00bfbf"></i><i style="background:#00bf00"></i><i style="background:#bf00bf"></i><i style="background:#bf0000"></i><i style="background:#0000bf"></i></div>
+<main>
+  <header>
+    <div class="brand">Monitor Calibrator</div>
+    <p class="screen">Measuring <b id="displayName">{{DISPLAY}}</b></p>
+  </header>
+
+  <section>
+    <div class="label"><span>Step 1 of 4</span><span>Chart</span></div>
+    <h2 id="chartTitle">Put the test chart on the screen</h2>
+    <p class="dim">Switch off Night Light on the PC first. A dim room helps.</p>
+    <div class="row">
+      <button id="showChart" class="primary">Show the chart</button>
+      <button id="hideChart">Hide it</button>
+    </div>
+    <p id="chartStatus" class="dim small"></p>
+  </section>
+
+  <section>
+    <div class="label"><span>Step 2 of 4</span><span>Photo</span></div>
+    <h2>Step back and take the photo</h2>
+    <figure>
+      <svg width="132" height="92" viewBox="0 0 132 92" aria-hidden="true">
+        <rect x="1" y="1" width="130" height="90" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-dasharray="4 3"/>
+        <rect x="46" y="31" width="40" height="25" fill="none" stroke="currentColor" stroke-width="2"/>
+        <rect x="62" y="56" width="8" height="7" fill="currentColor" fill-opacity=".5"/>
+        <path d="M46 72 H86" stroke="currentColor" stroke-opacity=".6"/>
+        <path d="M46 69 v6 M86 69 v6" stroke="currentColor" stroke-opacity=".6"/>
+        <text x="66" y="86" font-size="10" text-anchor="middle" fill="currentColor" fill-opacity=".7">¼ of the width</text>
+      </svg>
+      <figcaption class="small" id="photoTip">About <b>2 meters</b> back, no zoom. The screen should look about this small in the
+        frame. Slightly blurry is fine. Too close gives wavy lines and wrong numbers.</figcaption>
+    </figure>
+    <div class="row">
+      <label class="button primary">Open camera<input id="camera" type="file" accept="image/*" capture="environment" hidden></label>
+      <label class="button">Choose a photo<input id="gallery" type="file" accept="image/*" hidden></label>
+    </div>
+    <p id="uploadStatus" class="dim small"></p>
+    <details>
+      <summary>More tips</summary>
+      <ul class="tips small">
+        <li>Hold the phone straight on, no flash, and avoid reflections on the screen.</li>
+        <li>Keep the white frame from blowing out. Tap it on your phone to set the exposure.</li>
+        <li>For the white point too, lock the camera's white balance (Pro mode, 6500 K), or include a screen you trust in the photo.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section id="step3" class="hidden">
+    <div class="label"><span>Step 3 of 4</span><span>Check</span></div>
+    <h2>Line up the corners</h2>
+    <p class="dim small" id="cornersTip">Drag the four dots onto the outer corners of the white frame.</p>
+    <div id="uploadChecks" class="checks"></div>
+    <canvas id="canvas"></canvas>
+    <fieldset id="matchBox" class="hidden">
+      <legend>Reference</legend>
+      <label>Match the other screens to <select id="referenceScreen"></select></label>
+    </fieldset>
+    <fieldset id="wbBox">
+      <legend>White point</legend>
+      <label><input type="radio" name="wb" value="auto" checked> Camera on auto. Measure gamma and gray balance only.</label>
+      <label><input type="radio" name="wb" value="locked"> White balance locked at
+        <input id="kelvin" type="number" value="6500" min="2000" max="12000" step="100"> K</label>
+      <label><input type="radio" name="wb" value="reference"> A white I trust is in the photo.
+        <button id="drawRef" class="small" type="button">Mark it</button></label>
+    </fieldset>
+    <button id="analyse" class="primary">Measure</button>
+    <p id="analyseStatus" class="dim small"></p>
+  </section>
+
+  <section id="step4" class="hidden">
+    <div class="label"><span>Step 4 of 4</span><span>Result</span></div>
+    <h2 id="resultTitle">Result</h2>
+    <div id="warnings"></div>
+    <div id="matchResult" class="hidden"></div>
+    <div id="singleResult">
+    <div class="readouts" id="readouts"></div>
+    <p class="dim small">Gamma per channel. 2.20 is the standard.</p>
+    <svg id="plot" viewBox="0 0 300 220" aria-label="Measured tone curves against the 2.2 target"></svg>
+    <p id="tracking"></p>
+    <p id="white"></p>
+    <details id="checksBox"><summary id="checksTitle">Photo check</summary><div id="resultChecks" class="checks"></div></details>
+    <details><summary>What was measured</summary><img id="overlay" alt="The flattened chart with the measured areas outlined"></details>
+    </div>
+
+    <fieldset class="stack hidden" id="matchFix">
+      <legend>Correction</legend>
+      <label><input type="checkbox" id="matchWhite" checked> Match white</label>
+      <label><input type="checkbox" id="matchBrightness" checked> Match brightness (the brighter screen is turned down)</label>
+      <label><input type="checkbox" id="matchGamma" checked> Fix gamma on every screen to
+        <select id="matchTarget"><option value="2.2" selected>2.2</option><option value="2.4">2.4</option><option value="2.0">2.0</option></select></label>
+    </fieldset>
+    <fieldset class="stack" id="singleFix">
+      <legend>Correction</legend>
+      <label>Target gamma
+        <select id="target">
+          <option value="2.2" selected>2.2, standard</option>
+          <option value="2.4">2.4, movies in a dark room</option>
+          <option value="2.0">2.0, brighter shadows</option>
+        </select></label>
+      <label><input type="checkbox" id="fixGamma" checked> Fix gamma and gray balance</label>
+      <label><input type="checkbox" id="fixWhite"> Fix the white point (needs a locked camera or a reference)</label>
+      <label>Apply it through
+        <select id="via">
+          <option value="gpu">the graphics card (any screen)</option>
+          <option value="monitor">the monitor's RGB settings (User mode)</option>
+        </select></label>
+    </fieldset>
+    <div class="row">
+      <button id="apply" class="primary">Apply on the PC</button>
+      <button id="retake" type="button">Take another photo</button>
+    </div>
+    <p id="applyStatus" class="dim small"></p>
+    <p class="dim small">After keeping a change, take one more photo to confirm it.</p>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const canvas = $('#canvas');
+const ctx = canvas.getContext('2d');
+const img = new Image();
+const CHANNELS = { gray: null, red: '#bf0000', green: '#00bf00', blue: '#3f6fff' };
+const QUAD_COLORS = ['#ffffff', '#00bfbf', '#bfbf00', '#bf00bf'];
+let photo = null, quads = [], charts = [], matching = false;
+let reference = null, drawingRef = false, drag = null, refStart = null, pointer = null;
+
+async function api(path, body) {
+  let options = {};
+  if (body instanceof Blob) {
+    options = { method: 'POST', body, headers: { 'Content-Type': body.type || 'application/octet-stream' } };
+  } else if (body !== undefined) {
+    options = { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } };
+  }
+  const response = await fetch(path, options);
+  let data = {};
+  try { data = await response.json(); } catch (_) { /* not JSON */ }
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+function say(element, text, kind) {
+  element.textContent = text;
+  element.className = `${kind || 'dim'} small`;
+}
+
+function textColor() {
+  return getComputedStyle(document.body).color;
+}
+
+// Every photo is checked: fresh chart code, chart structure, real camera photo, distance.
+function showChecks(element, verification, note) {
+  const colors = { pass: 'var(--ok)', fail: 'var(--error)', soft: 'var(--warn)' };
+  const lines = (verification ? verification.checks : []).map((check) => {
+    const p = document.createElement('p');
+    const mark = document.createElement('i');
+    mark.style.background = check.passed ? colors.pass : (check.required ? colors.fail : colors.soft);
+    const text = document.createElement('span');
+    text.textContent = `${check.name}. ${check.detail}`;
+    p.append(mark, text);
+    return p;
+  });
+  if (note) {
+    const p = document.createElement('p'); p.className = 'dim'; p.textContent = note; lines.push(p);
+  }
+  element.replaceChildren(...lines);
+}
+
+// The PC window can be dragged to another screen; this page follows it.
+let shownDisplay = $('#displayName').textContent;
+let shownMode = 'single';
+
+// Matching: one photo of every screen, compared with each other. The PC decides the mode.
+function setMode(state) {
+  matching = state.mode === 'match';
+  const names = (state.screens || []).map((screen) => screen.name).join(' and ');
+  $('#displayName').textContent = matching ? names : state.display;
+  $('.screen').firstChild.textContent = matching ? 'Matching ' : 'Measuring ';
+  $('#chartTitle').textContent = matching ? 'Put the charts on every screen' : 'Put the test chart on the screen';
+  $('#showChart').textContent = matching ? 'Show the charts' : 'Show the chart';
+  $('#photoTip').textContent = matching
+    ? 'Step back until every screen fits in one photo, no zoom. Slightly blurry is fine. Too close gives wavy lines and wrong numbers.'
+    : 'About 2 meters back, no zoom. The screen should look about this small in the frame. Slightly blurry is fine. Too close gives wavy lines and wrong numbers.';
+  $('#cornersTip').textContent = matching
+    ? 'Each screen has its own color. Drag every dot onto the outer corners of that screen\'s white frame.'
+    : 'Drag the four dots onto the outer corners of the white frame.';
+  $('#wbBox').classList.toggle('hidden', matching);
+  $('#matchBox').classList.toggle('hidden', !matching);
+}
+
+async function followPC() {
+  let state;
+  try { state = await api('status'); } catch (_) { return; }
+  if (state.mode !== shownMode) {
+    shownMode = state.mode;
+    shownDisplay = state.display;
+    setMode(state);
+    photo = null;
+    $('#step3').classList.add('hidden');
+    $('#step4').classList.add('hidden');
+    return;
+  }
+  if (!matching && state.display !== shownDisplay) {
+    shownDisplay = state.display;
+    $('#displayName').textContent = state.display;
+    photo = null;
+    $('#step3').classList.add('hidden');
+    $('#step4').classList.add('hidden');
+    say($('#uploadStatus'), `The PC switched to ${state.display}. Show the chart and take a new photo.`, 'warn');
+  }
+}
+setInterval(followPC, 4000);
+followPC();
+
+async function chart(show) {
+  try {
+    await api('chart', { show });
+    say($('#chartStatus'), show ? 'The chart is up. Esc on the PC closes it.' : 'Chart hidden.');
+  } catch (err) { say($('#chartStatus'), err.message, 'error'); }
+}
+$('#showChart').onclick = () => chart(true);
+$('#hideChart').onclick = () => chart(false);
+$('#retake').onclick = () => { chart(true); $('#camera').closest('section').scrollIntoView({ behavior: 'smooth' }); };
+
+async function upload(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const status = $('#uploadStatus');
+  say(status, `Sending ${(file.size / 1e6).toFixed(1)} MB…`);
+  try {
+    photo = await api('upload', file);
+    reference = null;
+    if (photo.mode === 'match') {
+      charts = photo.charts;
+      quads = charts.map((c) => c.corners.map((p) => p.slice()));
+      showChartChecks($('#uploadChecks'), charts);
+      $('#referenceScreen').replaceChildren(...charts.filter((c) => c.key).map((c) => {
+        const option = document.createElement('option');
+        option.value = c.key; option.textContent = `${c.index}  ${c.name}`;
+        return option;
+      }));
+    } else {
+      charts = [];
+      quads = [photo.corners.map((p) => p.slice())];
+      showChecks($('#uploadChecks'), photo.verification, photo.verification.ok ? '' :
+        'Not confirmed yet. If the dots are off, move them onto the frame corners. The photo is checked again when you press Measure.');
+    }
+    img.onload = () => {
+      $('#step3').classList.remove('hidden');
+      fitCanvas();
+      draw();
+      $('#step3').scrollIntoView({ behavior: 'smooth' });
+    };
+    img.src = `photo/${photo.id}?t=${Date.now()}`;
+    say(status, 'Got it.', 'ok');
+  } catch (err) {
+    say(status, err.message, 'error');
+  }
+}
+$('#camera').onchange = upload;
+$('#gallery').onchange = upload;
+
+function showChartChecks(element, list) {
+  const blocks = [];
+  list.forEach((c, q) => {
+    const heading = document.createElement('p');
+    heading.style.color = QUAD_COLORS[q % QUAD_COLORS.length];
+    heading.textContent = c.key ? `${c.index}  ${c.name}` : 'A chart the PC didn\'t show';
+    const checks = document.createElement('div');
+    showChecks(checks, c.verification);
+    blocks.push(heading, checks);
+  });
+  if (list.length < 2) {
+    const p = document.createElement('p'); p.className = 'warn';
+    p.textContent = 'Only one chart was found. Get every screen into the photo.';
+    blocks.push(p);
+  }
+  element.replaceChildren(...blocks);
+}
+
+function fitCanvas() {
+  const width = canvas.parentElement.clientWidth;
+  const height = width * img.naturalHeight / img.naturalWidth;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.style.height = `${height}px`;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+}
+window.addEventListener('resize', () => { if (photo) { fitCanvas(); draw(); } });
+
+function draw() {
+  const W = canvas.width, H = canvas.height, r = window.devicePixelRatio || 1;
+  ctx.drawImage(img, 0, 0, W, H);
+  quads.forEach((corners, q) => {
+    const color = QUAD_COLORS[q % QUAD_COLORS.length];
+    ctx.lineWidth = 1.5 * r;
+    ctx.strokeStyle = color;
+    ctx.setLineDash([5 * r, 4 * r]);
+    ctx.beginPath();
+    corners.forEach(([x, y], i) => (i ? ctx.lineTo(x * W, y * H) : ctx.moveTo(x * W, y * H)));
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    corners.forEach(([x, y], i) => {
+      const active = drag && drag[0] === q && drag[1] === i;
+      ctx.beginPath();
+      ctx.arc(x * W, y * H, 11 * r, 0, Math.PI * 2);
+      ctx.fillStyle = active ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.2)';
+      ctx.fill();
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3 * r;
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5 * r;
+      ctx.stroke();
+    });
+    if (matching && charts[q]) {
+      ctx.font = `${13 * r}px system-ui, sans-serif`;
+      ctx.fillStyle = color;
+      ctx.fillText(String(charts[q].index || '?'), corners[0][0] * W + 14 * r, corners[0][1] * H + 26 * r);
+    }
+  });
+  if (reference) {
+    const [x0, y0, x1, y1] = reference;
+    ctx.strokeStyle = '#00bfbf';
+    ctx.lineWidth = 2 * r;
+    ctx.strokeRect(x0 * W, y0 * H, (x1 - x0) * W, (y1 - y0) * H);
+  }
+  if (drag !== null && pointer) loupe(pointer, W, H, r);
+}
+
+// Magnifier so a fingertip doesn't hide the corner you're placing.
+function loupe([px, py], W, H, r) {
+  const size = 120 * r, zoom = 4;
+  const sx = px * img.naturalWidth, sy = py * img.naturalHeight;
+  const span = size / zoom * img.naturalWidth / W;
+  const x = px < 0.5 ? W - size - 8 * r : 8 * r, y = 8 * r;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, size, size); ctx.clip();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, sx - span / 2, sy - span / 2, span, span, x, y, size, size);
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = r;
+  ctx.beginPath();
+  ctx.moveTo(x + size / 2, y); ctx.lineTo(x + size / 2, y + size);
+  ctx.moveTo(x, y + size / 2); ctx.lineTo(x + size, y + size / 2);
+  ctx.stroke();
+  ctx.restore();
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2 * r; ctx.strokeRect(x, y, size, size);
+}
+
+function position(event) {
+  const rect = canvas.getBoundingClientRect();
+  return [
+    Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+    Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+  ];
+}
+
+canvas.addEventListener('pointerdown', (event) => {
+  const p = position(event);
+  if (drawingRef) {
+    refStart = p;
+    reference = [p[0], p[1], p[0], p[1]];
+  } else {
+    const rect = canvas.getBoundingClientRect();
+    let best = null, bestDistance = 48;
+    quads.forEach((corners, q) => corners.forEach(([x, y], i) => {
+      const d = Math.hypot((x - p[0]) * rect.width, (y - p[1]) * rect.height);
+      if (d < bestDistance) { best = [q, i]; bestDistance = d; }
+    }));
+    if (best === null) return;
+    drag = best;
+    pointer = p;
+  }
+  canvas.setPointerCapture(event.pointerId);
+  event.preventDefault();
+  draw();
+});
+canvas.addEventListener('pointermove', (event) => {
+  const p = position(event);
+  if (drag !== null) { quads[drag[0]][drag[1]] = p; pointer = p; draw(); }
+  else if (refStart) { reference = [refStart[0], refStart[1], p[0], p[1]]; draw(); }
+});
+const release = () => {
+  if (refStart) { refStart = null; drawingRef = false; $('#drawRef').textContent = 'Mark it again'; }
+  drag = null; pointer = null;
+  if (photo) draw();
+};
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+
+$('#drawRef').onclick = () => {
+  drawingRef = true;
+  document.querySelector('input[name=wb][value=reference]').checked = true;
+  $('#drawRef').textContent = 'Drag over it on the photo';
+};
+
+$('#analyse').onclick = async () => {
+  const status = $('#analyseStatus');
+  if (matching) {
+    $('#analyse').disabled = true;
+    say(status, 'Comparing…');
+    try {
+      const payload = charts.map((c, q) => ({ key: c.key || '', corners: quads[q] })).filter((c) => c.key);
+      const result = await api('analyse', { id: photo.id, charts: payload, reference: $('#referenceScreen').value });
+      say(status, '');
+      showMatch(result);
+    } catch (err) {
+      say(status, err.message, 'error');
+    } finally {
+      $('#analyse').disabled = false;
+    }
+    return;
+  }
+  const mode = document.querySelector('input[name=wb]:checked').value;
+  const wb = { mode, kelvin: Number($('#kelvin').value) || 6500 };
+  if (mode === 'reference') {
+    if (!reference) { say(status, 'Mark the white you trust on the photo first.', 'error'); return; }
+    const [x0, y0, x1, y1] = reference;
+    wb.reference = [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)];
+  }
+  $('#analyse').disabled = true;
+  say(status, 'Measuring…');
+  try {
+    const result = await api('analyse', { id: photo.id, corners: quads[0], wb });
+    say(status, '');
+    showResult(result);
+  } catch (err) {
+    say(status, err.message, 'error');
+  } finally {
+    $('#analyse').disabled = false;
+  }
+};
+
+function plot(gammas) {
+  const svg = $('#plot');
+  const ns = 'http://www.w3.org/2000/svg';
+  const x0 = 34, y0 = 8, x1 = 292, y1 = 196;
+  const point = (x, y) => `${(x0 + x * (x1 - x0)).toFixed(1)},${(y1 - y * (y1 - y0)).toFixed(1)}`;
+  const curve = (g) => Array.from({ length: 33 }, (_, i) => point(i / 32, (i / 32) ** g)).join(' ');
+  const add = (tag, attrs) => {
+    const el = document.createElementNS(ns, tag);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    svg.append(el);
+    return el;
+  };
+  svg.replaceChildren();
+  const grid = getComputedStyle(document.documentElement).getPropertyValue('--line').trim();
+  [0.25, 0.5, 0.75].forEach((t) => {
+    add('line', { x1: x0 + t * (x1 - x0), y1: y0, x2: x0 + t * (x1 - x0), y2: y1, stroke: grid });
+    add('line', { x1: x0, y1: y1 - t * (y1 - y0), x2: x1, y2: y1 - t * (y1 - y0), stroke: grid });
+  });
+  add('rect', { x: x0, y: y0, width: x1 - x0, height: y1 - y0, fill: 'none', stroke: grid });
+  add('polyline', { points: curve(2.2), fill: 'none', stroke: textColor(), 'stroke-opacity': '.45', 'stroke-dasharray': '5 4' });
+  Object.entries(gammas).forEach(([name, g]) => {
+    if (g) add('polyline', { points: curve(g), fill: 'none', stroke: CHANNELS[name] || textColor(), 'stroke-width': 2 });
+  });
+  add('text', { x: x1, y: 214, 'text-anchor': 'end', 'font-size': 11, fill: textColor(), 'fill-opacity': '.6' }).textContent = 'signal';
+  add('text', { x: 4, y: 16, 'font-size': 11, fill: textColor(), 'fill-opacity': '.6' }).textContent = 'light';
+}
+
+function showMatch(result) {
+  $('#step4').classList.remove('hidden');
+  $('#singleResult').classList.add('hidden');
+  $('#singleFix').classList.add('hidden');
+  $('#matchResult').classList.remove('hidden');
+  $('#matchFix').classList.remove('hidden');
+  $('#warnings').replaceChildren(...(result.warnings || []).map((text) => {
+    const p = document.createElement('p'); p.className = 'note'; p.textContent = text; return p;
+  }));
+  $('#apply').disabled = !result.ok;
+  $('#resultTitle').textContent = result.ok ? 'Compared' : 'Couldn\'t compare these';
+  const blocks = (result.screens || []).map((screen) => {
+    const block = document.createElement('div');
+    const title = document.createElement('p');
+    const name = document.createElement('b');
+    name.textContent = `${screen.index}  ${screen.name}`;
+    title.append(name);
+    if (screen.key === result.reference) {
+      const tag = document.createElement('span'); tag.className = 'dim small'; tag.textContent = '  reference';
+      title.append(tag);
+    }
+    const gammas = document.createElement('p'); gammas.className = 'dim small';
+    gammas.textContent = 'Gamma ' + Object.entries(screen.gammas || {}).filter(([, v]) => v)
+      .map(([k, v]) => `${k} ${v.toFixed(2)}`).join('   ');
+    const text = document.createElement('p');
+    text.textContent = screen.comparison ? screen.comparison.text : 'The other screens are matched to this one.';
+    block.append(title, gammas, text);
+    return block;
+  });
+  $('#matchResult').replaceChildren(...blocks);
+  if (result.screens) {
+    result.screens.forEach((screen) => {
+      const q = charts.findIndex((c) => c.key === screen.key);
+      if (q >= 0 && screen.corners) quads[q] = screen.corners.map((p) => p.slice());
+    });
+    draw();
+  }
+  $('#step4').scrollIntoView({ behavior: 'smooth' });
+}
+
+function showResult(result) {
+  $('#step4').classList.remove('hidden');
+  $('#singleResult').classList.remove('hidden');
+  $('#singleFix').classList.remove('hidden');
+  $('#matchResult').classList.add('hidden');
+  $('#matchFix').classList.add('hidden');
+  const check = result.verification;
+  showChecks($('#resultChecks'), check);
+  showChecks($('#uploadChecks'), check);
+  $('#checksTitle').textContent = check && check.ok ? `Photo check passed, chart ${check.code}` : 'Photo check failed';
+  $('#checksBox').open = !(check && check.ok);
+  if (result.corners) { quads = [result.corners.map((p) => p.slice())]; draw(); }
+  $('#warnings').replaceChildren(...(result.warnings || []).map((text) => {
+    const p = document.createElement('p'); p.className = 'note'; p.textContent = text; return p;
+  }));
+  $('#apply').disabled = !result.ok;
+  const readouts = $('#readouts');
+  readouts.replaceChildren();
+  if (!result.ok) {
+    $('#resultTitle').textContent = 'Couldn\'t measure this one';
+    $('#plot').replaceChildren();
+    $('#tracking').textContent = 'See the notes above, then take another photo.';
+    $('#white').textContent = '';
+    return;
+  }
+  $('#resultTitle').textContent = result.reliable === false ? 'Measured, but not reliable' : 'Measured';
+  for (const [name, value] of Object.entries(result.gammas)) {
+    const cell = document.createElement('div');
+    const label = document.createElement('span'); label.textContent = name;
+    const number = document.createElement('b'); number.textContent = value ? value.toFixed(2) : '–';
+    if (CHANNELS[name]) number.style.color = CHANNELS[name];
+    cell.append(label, number);
+    readouts.append(cell);
+  }
+  plot(result.gammas);
+  $('#tracking').textContent = result.tracking;
+  $('#white').textContent = result.white.text;
+  const canFixWhite = result.white.mode !== 'auto';
+  $('#fixWhite').disabled = !canFixWhite;
+  $('#fixWhite').checked = canFixWhite;
+  $('#overlay').src = `overlay/${photo.id}?t=${Date.now()}`;
+  $('#step4').scrollIntoView({ behavior: 'smooth' });
+}
+
+$('#apply').onclick = async () => {
+  const status = $('#applyStatus');
+  const options = matching ? {
+    target_gamma: Number($('#matchTarget').value),
+    fix_gamma: $('#matchGamma').checked,
+    match_white: $('#matchWhite').checked,
+    match_brightness: $('#matchBrightness').checked,
+  } : {
+    target_gamma: Number($('#target').value),
+    fix_gamma: $('#fixGamma').checked,
+    fix_white: $('#fixWhite').checked && !$('#fixWhite').disabled,
+    via: $('#via').value,
+  };
+  $('#apply').disabled = true;
+  try {
+    const response = await api('apply', { id: photo.id, options });
+    say(status, `Applying “${response.title}”. Look at the PC and choose Keep or Go back.`);
+    await waitForAnswer(status);
+  } catch (err) {
+    say(status, err.message, 'error');
+  } finally {
+    $('#apply').disabled = false;
+  }
+};
+
+async function waitForAnswer(status) {
+  for (let i = 0; i < 120; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    let state;
+    try { state = await api('status'); } catch (_) { continue; }
+    if (state.apply && state.apply.state !== 'waiting') {
+      const kind = { kept: 'ok', error: 'error' }[state.apply.state] || 'dim';
+      say(status, state.apply.message, kind);
+      return;
+    }
+  }
+}
+</script>
+</body>
+</html>

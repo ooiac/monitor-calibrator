@@ -1,0 +1,7 @@
+{
+  "name": "Example. Copy this to DEL4123.json (no underscore) and change the id to use it",
+  "match": { "pnp_id": "DEL4123" },
+  "notes": "Files starting with _ are ignored. Find your monitor's id with: python calibrate.py --list",
+  "gpu": { "temperature": 6300, "tint": 2, "gamma": 2.2 },
+  "ddc": { "color_preset": "User 1", "red_gain": 100, "green_gain": 97, "blue_gain": 94 }
+}
